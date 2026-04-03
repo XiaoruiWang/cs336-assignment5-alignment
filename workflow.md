@@ -32,8 +32,9 @@ uv sync
 `uv sync` will install all dependencies including torch, vllm, and flash-attn. This takes a few minutes on first run.
 
 ### Step 5: Download the model
+`huggingface-cli` lives inside the uv environment, so prefix with `uv run`:
 ```bash
-huggingface-cli download Qwen/Qwen2.5-Math-1.5B
+uv run huggingface-cli download Qwen/Qwen2.5-Math-1.5B
 ```
 
 The model (~3GB) is cached in `~/.cache/huggingface/`. Only needed once per pod.
