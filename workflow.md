@@ -75,3 +75,31 @@ source $HOME/.local/bin/env
 cd cs336-assignment5-alignment
 git pull
 ```
+
+---
+
+## Exporting Results from RunPod to GitHub
+
+After running an experiment, push results from RunPod to GitHub so you can pull them on Windows.
+
+### Step 1: Configure git identity (once per pod)
+RunPod pods don't have git identity by default. Run this before your first commit:
+```bash
+git config --global user.email "xiaoruiw86@gmail.com"
+git config --global user.name "XiaoruiWang"
+```
+
+### Step 2: Stage, commit, and push results
+```bash
+git add outputs/math_baseline_results.jsonl
+git commit -m "Add zero-shot baseline results"
+git push
+```
+
+### Step 3: Pull on Windows
+Back on your local machine:
+```bash
+git pull
+```
+
+The results file (`outputs/math_baseline_results.jsonl`) is now available locally for analysis.
