@@ -1,16 +1,12 @@
 """
-Local tests for run_tokenize_prompt_and_output.
-Run with: python cs336_alignment/test_local.py
+Local tests. Run all: python cs336_alignment/test_local.py
+Run one:  python cs336_alignment/test_local.py -m test_entropy
 """
 import sys
 sys.path.insert(0, ".")
 
 import torch
 from transformers import AutoTokenizer
-from tests.adapters import run_tokenize_prompt_and_output
-
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-tokenizer.pad_token_id = tokenizer.eos_token_id
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -21,74 +17,82 @@ def check(name, condition):
     return condition
 
 
-# ── Test 1: basic shapes ──────────────────────────────────────────────────────
-print("\nTest 1: shapes are correct")
-prompt_strs = ["Hello world", "Hi"]
-output_strs = ["how are you", "good"]
+def test_tokenize():
+    from tests.adapters import run_tokenize_prompt_and_output
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token_id = tokenizer.eos_token_id
 
-out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    print("\nTest: tokenize — shapes")
+    prompt_strs = ["Hello world", "Hi"]
+    output_strs = ["how are you", "good"]
+    out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    p_ids = tokenizer(prompt_strs, add_special_tokens=False)["input_ids"]
+    o_ids = tokenizer(output_strs, add_special_tokens=False)["input_ids"]
+    expected_len = max(len(p)+len(o) for p,o in zip(p_ids, o_ids)) - 1
+    check("input_ids shape",     out["input_ids"].shape     == (2, expected_len))
+    check("labels shape",        out["labels"].shape        == (2, expected_len))
+    check("response_mask shape", out["response_mask"].shape == (2, expected_len))
 
-p_ids = tokenizer(prompt_strs, add_special_tokens=False)["input_ids"]
-o_ids = tokenizer(output_strs, add_special_tokens=False)["input_ids"]
-expected_len = max(len(p)+len(o) for p,o in zip(p_ids, o_ids)) - 1
+    print("\nTest: tokenize — labels shifted by 1")
+    out = run_tokenize_prompt_and_output(["The cat sat"], ["on the mat"], tokenizer)
+    check("labels[i] == input_ids[i+1]",
+          torch.all(out["labels"][0, :-1] == out["input_ids"][0, 1:]).item())
 
-check("input_ids shape",     out["input_ids"].shape     == (2, expected_len))
-check("labels shape",        out["labels"].shape        == (2, expected_len))
-check("response_mask shape", out["response_mask"].shape == (2, expected_len))
+    print("\nTest: tokenize — response_mask boundary")
+    out = run_tokenize_prompt_and_output(["Hello"], ["world foo bar"], tokenizer)
+    p_len = len(tokenizer(["Hello"], add_special_tokens=False)["input_ids"][0])
+    o_len = len(tokenizer(["world foo bar"], add_special_tokens=False)["input_ids"][0])
+    mask = out["response_mask"][0].tolist()
+    check("prompt tokens masked 0",  all(m == False for m in mask[:p_len - 1]))
+    check("response tokens masked 1", all(m == True for m in mask[p_len - 1: p_len - 1 + o_len]))
 
-
-# ── Test 2: labels is input_ids shifted left by 1 ────────────────────────────
-print("\nTest 2: labels is input_ids shifted left by 1")
-prompt_strs = ["The cat sat"]
-output_strs = ["on the mat"]
-
-out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
-
-# Reconstruct full sequence from input_ids and labels
-# input_ids = full[:-1], labels = full[1:]
-# So input_ids[0] and labels[0] should overlap everywhere except first/last
-check("labels[i] == input_ids[i+1]",
-      torch.all(out["labels"][0, :-1] == out["input_ids"][0, 1:]).item())
-
-
-# ── Test 3: response_mask boundary ───────────────────────────────────────────
-print("\nTest 3: response_mask boundary is correct")
-prompt_strs = ["Hello"]
-output_strs = ["world foo bar"]
-
-out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
-
-p_ids = tokenizer(["Hello"], add_special_tokens=False)["input_ids"][0]
-o_ids = tokenizer(["world foo bar"], add_special_tokens=False)["input_ids"][0]
-p_len = len(p_ids)
-o_len = len(o_ids)
-
-mask = out["response_mask"][0].tolist()
-
-# Positions before prompt_length-1 should be 0
-check("prompt tokens masked 0",
-      all(m == False for m in mask[:p_len - 1]))
-# Positions from prompt_length-1 to prompt_length-1+output_length should be 1
-check("response tokens masked 1",
-      all(m == True for m in mask[p_len - 1 : p_len - 1 + o_len]))
+    print("\nTest: tokenize — padding masked 0")
+    prompt_strs = ["Hi", "The quick brown fox jumps over the lazy dog"]
+    output_strs = ["ok", "and then it ran away"]
+    out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    p_ids = tokenizer(prompt_strs, add_special_tokens=False)["input_ids"]
+    o_ids = tokenizer(output_strs, add_special_tokens=False)["input_ids"]
+    short_len = len(p_ids[0]) + len(o_ids[0])
+    check("padding positions are False",
+          all(m == False for m in out["response_mask"][0, short_len - 1:].tolist()))
 
 
-# ── Test 4: padding positions are 0 in response_mask ─────────────────────────
-print("\nTest 4: padding positions are 0 in response_mask")
-# Use two sequences of very different lengths so padding is clearly visible
-prompt_strs = ["Hi", "The quick brown fox jumps over the lazy dog"]
-output_strs = ["ok", "and then it ran away"]
+def test_entropy():
+    from tests.adapters import run_compute_entropy
 
-out = run_tokenize_prompt_and_output(prompt_strs, output_strs, tokenizer)
+    print("\nTest: compute_entropy")
+    torch.manual_seed(42)
+    logits = torch.randn(2, 10, 100)
+    entropy = run_compute_entropy(logits)
+    check("output shape is (batch, seq)", entropy.shape == (2, 10))
+    check("entropy is non-negative",      entropy.min().item() >= 0)
+    check("entropy <= log(vocab_size)",   entropy.max().item() <= torch.log(torch.tensor(100.0)).item() + 1e-5)
 
-# The short sequence (row 0) should have trailing 0s in response_mask
-p_ids = tokenizer(prompt_strs, add_special_tokens=False)["input_ids"]
-o_ids = tokenizer(output_strs, add_special_tokens=False)["input_ids"]
-short_len = len(p_ids[0]) + len(o_ids[0])  # total tokens for row 0
-total_len  = out["response_mask"].shape[1]
+    uniform_logits = torch.zeros(1, 1, 100)
+    uniform_entropy = run_compute_entropy(uniform_logits)
+    check("uniform logits → max entropy",
+          abs(uniform_entropy.item() - torch.log(torch.tensor(100.0)).item()) < 1e-4)
 
-check("padding positions are False",
-      all(m == False for m in out["response_mask"][0, short_len - 1:].tolist()))
+    peaked_logits = torch.full((1, 1, 100), -1e9)
+    peaked_logits[0, 0, 0] = 1e9
+    peaked_entropy = run_compute_entropy(peaked_logits)
+    check("peaked logits → near-zero entropy", peaked_entropy.item() < 1e-3)
 
 
-print("\nDone.")
+# ── runner ────────────────────────────────────────────────────────────────────
+TESTS = {
+    "test_tokenize": test_tokenize,
+    "test_entropy":  test_entropy,
+}
+
+if __name__ == "__main__":
+    if "-m" in sys.argv:
+        name = sys.argv[sys.argv.index("-m") + 1]
+        if name not in TESTS:
+            print(f"Unknown test '{name}'. Available: {list(TESTS)}")
+            sys.exit(1)
+        TESTS[name]()
+    else:
+        for fn in TESTS.values():
+            fn()
+    print("\nDone.")

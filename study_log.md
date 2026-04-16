@@ -112,6 +112,77 @@ Commas separate dimensions. Each slice acts on one dimension. `:` means "take al
 
 ## Key Concepts Learned
 
+### Always specify `dim` when reducing tensors
+
+Forgetting `dim` collapses everything to a scalar — silently wrong.
+
+```python
+# Wrong — sums ALL dimensions → scalar ()
+torch.sum(probs * log_probs)
+
+# Correct — sums over vocab only → shape (batch, seq)
+(probs * log_probs).sum(dim=-1)
+```
+
+**Two equivalent styles in PyTorch:**
+
+| Style | Example | When to use |
+|---|---|---|
+| Functional | `torch.sum(x, dim=-1)` | explicit, useful when chaining |
+| Method (OO) | `x.sum(dim=-1)` | cleaner, preferred |
+
+Both are identical — pick whichever reads better.
+
+---
+
+### Entropy from Logits
+
+The entropy formula is:
+
+$$H(p) = -\sum_x p(x) \log p(x)$$
+
+But you don't have $p(x)$ — you have **logits**. To get $\log p(x)$:
+
+$$\log p(x_i) = \text{logits}_i - \log \sum_j e^{\text{logits}_j}$$
+
+The second term is **logsumexp**:
+
+$$\log \sum_j e^{\text{logits}_j}$$
+
+So in code:
+```python
+log_probs = F.log_softmax(logits, dim=-1)   # numerically stable log p(x)
+entropy = -(log_probs.exp() * log_probs).sum(dim=-1)  # H = -sum p(x) log p(x)
+```
+
+Why `log_softmax` instead of `softmax` then `log`? Numerical stability — `softmax` can overflow/underflow for large logits. `log_softmax` uses the logsumexp trick internally to stay stable.
+
+---
+
+
+
+### pytest fixture override — Stanford path workaround
+
+`tests/conftest.py` hardcodes `/data/a5-alignment/models/Qwen2.5-Math-1.5B` (Stanford cluster path). On RunPod this path doesn't exist, causing the test to fail at setup before even running your code.
+
+Fix: make the fixture fall back to the HuggingFace model ID when the local path doesn't exist:
+
+```python
+@pytest.fixture
+def model_id():
+    import os
+    local_path = "/data/a5-alignment/models/Qwen2.5-Math-1.5B"
+    if os.path.isdir(local_path):
+        return local_path
+    return "Qwen/Qwen2.5-Math-1.5B"
+```
+
+HuggingFace `from_pretrained` checks the local cache first — since we already ran `huggingface-cli download Qwen/Qwen2.5-Math-1.5B`, it loads from `~/.cache/huggingface/hub/` without re-downloading.
+
+---
+
+
+
 ### `uv run python` vs `python`
 
 - **`python`** — uses whatever Python is active in your current shell (e.g., conda `alignment` environment)
