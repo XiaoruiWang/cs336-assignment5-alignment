@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
+from torch.nn.utils.rnn import pad_sequence 
 
 
 def run_tokenize_prompt_and_output(
@@ -31,8 +32,30 @@ def run_tokenize_prompt_and_output(
             "response_mask": torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1):
                 a mask on the response tokens in `labels`.
     """
-    raise NotImplementedError
+    prompt_ids = tokenizer(prompt_strs, add_special_tokens =False)["input_ids"]
+    output_ids = tokenizer(output_strs, add_special_tokens =False)["input_ids"]
 
+    prompt_length = [len(p) for p in prompt_ids]
+    output_length = [len(o) for o in output_ids]
+    prompt_and_output_lens = [len(p) + len(o) for p,o in zip(prompt_ids, output_ids)]
+    max_lens = max(prompt_and_output_lens)
+    batch_size = len(prompt_ids)
+
+    prompt_output_concat = [p+o for p,o in zip(prompt_ids,output_ids)]
+    # convert to torch tensor first 
+    sequences = [torch.tensor(ids) for ids in prompt_output_concat]
+    # padding- when calling this function no max_lens needed. 
+    padded = pad_sequence(sequences, batch_first = True, padding_value = tokenizer.pad_token_id)
+    response_mask =  torch.zeros(batch_size, max_lens - 1, dtype=torch.bool)
+
+    for p,o,r in zip(prompt_length, output_length, response_mask):
+        r[p-1:p-1+o] = 1 
+    input_ids = padded[:,:-1]
+    labels = padded[:, 1:]
+    final_dict = {"input_ids": input_ids, 
+                  "labels" : labels, 
+                  "response_mask": response_mask}
+    return final_dict 
 
 def run_compute_group_normalized_rewards(
     reward_fn: Callable,
