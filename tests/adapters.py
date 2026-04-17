@@ -145,8 +145,8 @@ def run_sft_microbatch_train_step(
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Compute the policy gradient loss and backprop its gradients for a microbatch.
     """
-    masked_sum_log_probs = run_masked_normalize(policy_log_probs,response_mask,None, normalize_constant)
-    normalized_loss = masked_sum_log_probs / gradient_accumulation_steps
+    masked_sum_log_probs = run_masked_normalize(policy_log_probs,response_mask,-1, normalize_constant)
+    normalized_loss = masked_sum_log_probs.mean() / gradient_accumulation_steps
     loss = -normalized_loss
     loss.backward()
     return (loss, {})
