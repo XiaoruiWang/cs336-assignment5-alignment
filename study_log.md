@@ -112,6 +112,66 @@ Commas separate dimensions. Each slice acts on one dimension. `:` means "take al
 
 ## Key Concepts Learned
 
+### `gather` — picking one value per position from a distribution
+
+```python
+log_probs = log_probs_all.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+```
+
+Step by step:
+
+| Step | Code | Shape | Why |
+|---|---|---|---|
+| Start | `log_probs_all` | `(B, S, V)` | log-prob for every vocab token at every position |
+| Expand index | `labels.unsqueeze(-1)` | `(B, S, 1)` | `gather` needs index to have same ndim as source |
+| Select | `.gather(dim=-1, index=...)` | `(B, S, 1)` | picks `log_probs_all[b, s, labels[b,s]]` for each b, s |
+| Remove extra dim | `.squeeze(-1)` | `(B, S)` | one log-prob per token position |
+
+**What `gather` does:** for each `(b, s)` pair, it uses `labels[b, s]` as an index into the vocab dimension to pick out exactly one value. The label is different at every position, so you can't use simple slicing.
+
+**Why `unsqueeze` then `squeeze`:** `gather` requires the index tensor to have the same number of dimensions as the source tensor. `labels` is `(B, S)` but `log_probs_all` is `(B, S, V)`, so we temporarily add a dim, gather, then remove it.
+
+---
+
+### `softmax` vs `sum` — shape behavior
+
+| Operation | What it does on `dim=k` | Shape change | Typical use |
+|---|---|---|---|
+| `softmax(dim=k)` | normalize (values sum to 1) | no change | probabilities |
+| `sum(dim=k)` | collapse (add up) | reduces by 1 dim | aggregation |
+
+```python
+x = torch.randn(2, 3, 4)
+
+# softmax: shape unchanged
+probs = torch.softmax(x, dim=-1)       # (2, 3, 4) — same shape
+
+# sum: shape shrinks
+y = torch.sum(x, dim=-1)              # (2, 3)   — last dim removed
+y_keep = torch.sum(x, dim=-1, keepdim=True)  # (2, 3, 1) — kept as size-1
+```
+
+**Key distinction:** `softmax` transforms values, `sum` collapses a dimension.
+
+---
+
+### `keepdim=True` — when to use it
+
+Use `keepdim=True` when the reduced result needs to **broadcast back** against the original tensor. Without it, the axis disappears entirely and shapes won't align.
+
+The classic case:
+```python
+x = torch.randn(2, 3, 4)  # (B, S, V)
+
+# Manual normalization: divide each element by the sum along V
+x / x.sum(dim=-1)                    # RuntimeError! (2,3,4) / (2,3) — shape mismatch
+x / x.sum(dim=-1, keepdim=True)      # Works: (2,3,4) / (2,3,1) — broadcasts over V
+```
+
+**Rule:** if you're going to use the result in an operation with the original tensor, add `keepdim=True`.
+
+---
+
 ### Always specify `dim` when reducing tensors
 
 Forgetting `dim` collapses everything to a scalar — silently wrong.
