@@ -39,9 +39,16 @@ uv run huggingface-cli download Qwen/Qwen2.5-Math-1.5B
 
 The model (~3GB) is cached in `~/.cache/huggingface/`. Only needed once per pod.
 
-### Step 6: Run the zero-shot baseline
+
+### Step 5-a: Set up the weight and bias which will be needed for experiment
+export WANDB_API_KEY=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
+
+
+### Step 6: Run experiments
 ```bash
 uv run python cs336_alignment/math_baseline.py
+uv run python -m cs336_alignment.sft
+
 ```
 
 Results are saved to `outputs/math_baseline_results.jsonl`.

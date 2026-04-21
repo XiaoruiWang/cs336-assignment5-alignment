@@ -135,6 +135,7 @@ def run_masked_normalize(
         torch.Tensor, the normalized sum, where masked elements
             (mask=0) don't contribute to the sum.
     """
+    mask = mask.to(tensor.device)
     masked_tensor = tensor * mask 
     final_tensor = masked_tensor.sum(dim = dim)
     return final_tensor/normalize_constant
