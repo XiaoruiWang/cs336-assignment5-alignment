@@ -140,7 +140,7 @@ def main():
     sft_data_path = PROJECT_ROOT/"data/gsm8k/sft.jsonl"
     dataset_size = 128 
     lr = 1e-5 
-    batch_size = 4 
+    batch_size = 2 
     gradient_accumulation_steps = 4
     clip_value = 1.0 
     eval_interval = 5
@@ -170,7 +170,7 @@ def main():
     ground_truths = [re.search(r"<answer>(.*?)</answer>", r["response"]).group(1) for r in dataset]
 
     # 4. load model + tokenizer onto GPU 0
-    model =  AutoModelForCausalLM.from_pretrained(model_id,device_map = "cuda:0")
+    model = AutoModelForCausalLM.from_pretrained(model_id, device_map="cuda:0", torch_dtype=torch.bfloat16)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     
     # 5. init_vllm on GPU 1; build SamplingParams for eval rollouts
