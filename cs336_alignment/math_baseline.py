@@ -63,6 +63,7 @@ def main():
 
     # build prompts and gts after template is loaded 
     prompts = [template.format(question = ex["question"]) for ex in examples]
+    print(prompts[0])
     ground_truths = [ex["answer"].split("#### ")[-1].strip() for ex in examples ]
 
     # Create an LLM.

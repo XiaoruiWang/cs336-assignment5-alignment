@@ -221,6 +221,100 @@ Why `log_softmax` instead of `softmax` then `log`? Numerical stability — `soft
 
 
 
+### `.item()` — extracting scalars from tensors
+
+Any reduction on a tensor (`.sum()`, `.mean()`, indexing a 1-D tensor) returns a **0-dim PyTorch tensor**, not a plain Python number:
+
+```python
+attention_mask[i].sum()         # tensor(5)   ← still a tensor
+attention_mask[i].sum().item()  # 5           ← plain Python int
+
+entropy_avg[i]                  # tensor(1.23) ← 0-dim tensor
+entropy_avg[i].item()           # 1.23         ← plain Python float
+```
+
+**When to use `.item()`:** whenever you want to store a value in a dict, log it, serialize to JSON, or compare with a plain number. Tensors in dicts are not JSON-serializable.
+
+### Counting tokens vs characters
+
+```python
+len(responses[i])                    # wrong — counts characters
+attention_mask[i].sum().item()       # correct — counts real tokens
+```
+
+`len("hello")` = 5 (characters). `len(tokenizer("hello"))` = 1 (token). Always use token count for LLM analysis — character count is meaningless for measuring response length.
+
+### Shape of `entropy_avg`
+
+```python
+entropy      # (B, S)  — per-token entropy
+entropy_avg = (entropy * attention_mask).sum(-1) / attention_mask.sum(-1)
+             # sum(-1) → (B,),  divide → (B,)
+```
+
+`entropy_avg[i]` is a 0-dim scalar tensor — one average entropy value per example in the batch. Use `.item()` to extract as a plain float.
+
+---
+
+### Tokenizing a batch for model forward pass — three common bugs
+
+**Context:** computing entropy over model outputs for a batch of generated responses.
+
+**Bug 1 — tokenizer returns a list, model needs a tensor**
+```python
+# Wrong
+input_ids = tokenizer(responses, add_special_tokens=False)["input_ids"]  # list of lists
+
+# Correct
+input_ids = tokenizer(responses, return_tensors="pt", padding=True, add_special_tokens=False)["input_ids"]  # tensor
+```
+
+**Bug 2 — model() returns an object, not logits directly**
+```python
+# Wrong
+logits = model(input_ids)
+
+# Correct
+logits = model(input_ids).logits   # always need .logits
+```
+
+**Bug 3 — averaging entropy over padding tokens too**
+```python
+# Wrong — includes padding positions
+entropy_avg = entropy.mean()
+
+# Correct — mask out padding before averaging
+attention_mask = tokenizer(responses, return_tensors="pt", padding=True, add_special_tokens=False)["attention_mask"]
+entropy = run_compute_entropy(logits)                          # (B, S)
+entropy_avg = (entropy * attention_mask).sum(-1) / attention_mask.sum(-1)  # per-example avg
+```
+
+**Q: What is `attention_mask`?**
+Shape `(B, S)` — `1` for real tokens, `0` for padding. Returned automatically by the HuggingFace tokenizer when `padding=True`. You don't compute it yourself.
+
+**Q: When do you need `padding=True`?**
+Whenever you have a batch of variable-length sequences. Padding aligns them into a rectangular tensor. Single sequences don't need it.
+
+**Q: When do you need `return_tensors="pt"`?**
+Whenever the result goes into a PyTorch model. Without it, the tokenizer returns Python lists, which the model can't accept.
+
+---
+
+### `sft_microbatch_train_step` — don't forget to average over batch
+
+**Bug:** using `dim=None` in `run_masked_normalize` sums over all elements (seq AND batch), skipping the batch average. Loss was 2x too large.
+
+**Fix:** use `dim=-1` to sum over the sequence dimension only → shape `(B,)`, then `.mean()` to average over the batch:
+
+```python
+per_example = run_masked_normalize(policy_log_probs, response_mask, dim=-1, normalize_constant)  # (B,)
+loss = -per_example.mean() / gradient_accumulation_steps
+```
+
+**Why it matters:** `dim=None` collapses batch + seq at once, so a batch of 2 produces a sum 2x larger than expected. Always reduce dimensions deliberately — seq first, then batch.
+
+---
+
 ### pytest fixture override — Stanford path workaround
 
 `tests/conftest.py` hardcodes `/data/a5-alignment/models/Qwen2.5-Math-1.5B` (Stanford cluster path). On RunPod this path doesn't exist, causing the test to fail at setup before even running your code.
@@ -274,9 +368,55 @@ The preamble in every prompt acts like a **system prompt** — it tells the mode
 
 ---
 
+### Tokenizer — two things to know
+
+1. **Tokenizers run on CPU** — no `device_map` or `.to(device)` needed. Only the model goes on GPU.
+
+2. **Always use the model's own tokenizer** — `AutoTokenizer.from_pretrained(model_id)` loads the correct one automatically. GPT-2's tokenizer appears in `test_local.py` only because it's tiny and fast for local testing; never use it in production code.
+
+---
+
 ### Zero-shot Baseline Results (GSM8K, Qwen2.5-Math-1.5B)
 
 - Total examples: 1319
 - Correct (format=1, answer=1): 32 (2.4%)
 - Formatted wrong (format=1, answer=0): 226 (17.1%)
 - No format (format=0, answer=0): 1061 (80.5%)
+
+---
+
+### `zero_grad` placement and the training loop invariant
+
+**The one invariant that must never be broken:**
+
+```
+backward → step
+```
+
+`zero_grad` can go anywhere — before `backward` or after `step` — as long as it does not slip between `backward` and `step`.
+
+**Canonical PyTorch loop (no gradient accumulation):**
+
+```python
+for batch in dataloader:
+    optimizer.zero_grad()   # clear before accumulating
+    loss = criterion(model(batch), labels)
+    loss.backward()
+    optimizer.step()
+```
+
+**With gradient accumulation:**
+
+```python
+for i in range(iterations):
+    loss, _ = run_sft_microbatch_train_step(...)   # calls backward internally
+    if (i+1) % gradient_accumulation_steps == 0:
+        clip_grad_norm_(model.parameters(), clip_value)
+        optimizer.step()
+        optimizer.zero_grad()   # reset after step, ready for next window
+        train_step += 1
+```
+
+`zero_grad` moves to after `step` because you want gradients to accumulate across multiple `backward()` calls within one window. Putting `zero_grad` before each `backward` would wipe the accumulation.
+
+**Why `zero_grad` before `step` is wrong:** it wipes accumulated gradients before the optimizer can use them — the weight update uses zero gradients and does nothing.

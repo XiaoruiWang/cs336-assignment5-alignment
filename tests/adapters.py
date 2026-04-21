@@ -151,11 +151,6 @@ def run_sft_microbatch_train_step(
     loss.backward()
     return (loss, {})
 
-
-def log_generations():
-    raise NotImplementedError
-    
-
 ## **************end of section 4 ****************##
 
 def run_compute_group_normalized_rewards(
