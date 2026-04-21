@@ -420,3 +420,20 @@ for i in range(iterations):
 `zero_grad` moves to after `step` because you want gradients to accumulate across multiple `backward()` calls within one window. Putting `zero_grad` before each `backward` would wipe the accumulation.
 
 **Why `zero_grad` before `step` is wrong:** it wipes accumulated gradients before the optimizer can use them — the weight update uses zero gradients and does nothing.
+
+---
+
+### Device mismatch — always move tokenizer output to model device
+
+**Error:** `RuntimeError: Expected all tensors to be on the same device, but found cuda:0 and cpu`
+
+**Cause:** tokenizer always outputs CPU tensors. Model lives on GPU. Passing CPU tensors directly to a GPU model causes a device mismatch.
+
+**Fix:** move tensors immediately after tokenizing, before any forward pass:
+```python
+input_ids = input_ids.to(model.device)
+labels = labels.to(model.device)
+logits = model(input_ids).logits
+```
+
+**Mental model:** tokenize → move → forward. Always ask "where did this tensor come from?" before calling `model(x)`. Tokenizer output is always CPU; models are on GPU. They must match.

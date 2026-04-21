@@ -100,6 +100,9 @@ def run_get_response_log_probs(
                 or padding; that is done in the train loop.
     """
     model.eval()
+    input_ids = input_ids.to(model.device)
+    labels = labels.to(model.device)
+
     logits = model(input_ids).logits # logits shape is b, s, vocab -> safe assumption
     log_probs = torch.log_softmax(logits, dim = -1) 
     log_probs_y = log_probs.gather(dim = -1, index = labels.unsqueeze(-1)).squeeze(-1)
