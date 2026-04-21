@@ -210,7 +210,7 @@ def main():
             wandb.log({"train/loss": loss.item(), "train_step": train_step})
             if train_step  % eval_interval == 0:
                 load_policy_into_vllm_instance(model,vllm_model)
-                stats = log_generations(vllm_model,prompts,ground_truths,
+                stats = log_generations(vllm_model,prompts[:50],ground_truths[:50],
                                         r1_zero_reward_fn, sampling_params,model,tokenizer)
                 wandb.log({
                             "eval/avg_reward": stats["avg_reward"],
