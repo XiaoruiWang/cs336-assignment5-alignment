@@ -437,3 +437,11 @@ logits = model(input_ids).logits
 ```
 
 **Mental model:** tokenize → move → forward. Always ask "where did this tensor come from?" before calling `model(x)`. Tokenizer output is always CPU; models are on GPU. They must match.
+
+**Secondary pattern — when you don't have `model.device`:** use `tensor.device` to match devices without passing the model around. If one tensor is already on the right device, move others to match it:
+
+```python
+mask = mask.to(tensor.device)   # match mask to wherever tensor already lives
+```
+
+This is useful inside helper functions that receive tensors but not the model itself.
