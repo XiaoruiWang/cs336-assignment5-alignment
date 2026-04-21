@@ -60,6 +60,8 @@ def log_generations(
     # hint: tokenize responses, 
     tokenized = tokenizer(responses, padding= True, return_tensors ="pt", add_special_tokens =False)
     input_ids = tokenized["input_ids"]
+    input_ids = input_ids.to(model.device)
+    #labels = labels.to(model.device)
     # run model forward pass, 
     logits = model(input_ids).logits
     # call run_compute_entropy
