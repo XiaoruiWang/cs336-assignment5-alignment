@@ -438,7 +438,26 @@ logits = model(input_ids).logits
 
 **Mental model:** tokenize → move → forward. Always ask "where did this tensor come from?" before calling `model(x)`. Tokenizer output is always CPU; models are on GPU. They must match.
 
-**Secondary pattern — when you don't have `model.device`:** use `tensor.device` to match devices without passing the model around. If one tensor is already on the right device, move others to match it:
+**Secondary pattern — when you don't have `model.device`:** use `tensor.device` to match devices without passing the model around.
+
+---
+
+### `torch.no_grad()` — always use during inference/eval
+
+**Bug:** OOM during `log_generations` eval forward pass — 50 long responses batched together exhausted GPU memory.
+
+**Two fixes:**
+1. Reduce eval batch size (e.g. `prompts[:10]` instead of `prompts[:50]`)
+2. Wrap eval forward pass in `torch.no_grad()` — entropy/log-prob computation for eval doesn't need gradients, so PyTorch doesn't need to store activations for backprop:
+
+```python
+with torch.no_grad():
+    logits = model(input_ids).logits
+```
+
+**Why it saves memory:** during a normal forward pass, PyTorch stores intermediate activations for backprop. `no_grad()` skips this — cuts activation memory roughly in half.
+
+**Rule:** any forward pass that is NOT followed by `.backward()` should be wrapped in `torch.no_grad()`. This includes eval, logging, and entropy computation. If one tensor is already on the right device, move others to match it:
 
 ```python
 mask = mask.to(tensor.device)   # match mask to wherever tensor already lives
