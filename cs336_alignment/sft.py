@@ -68,6 +68,7 @@ def log_generations(
     # call run_compute_entropy
     # then average entropy over response tokens only
     attention_mask = tokenized["attention_mask"]
+    attention_mask = attention_mask.to(model.device)
     entropy = run_compute_entropy(logits)                    # (B, S)
     entropy_avg = (entropy * attention_mask).sum(-1) / attention_mask.sum(-1)  # per-example avg
 
