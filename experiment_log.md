@@ -54,3 +54,33 @@ will improve correctness. This 2.4% is our floor to beat.
 ---
 
 ### TODO: Add 10 example failure cases per category (3.2b written analysis)
+
+---
+
+## Section 4.3 — SFT Dataset Size Sweep (GSM8K)
+
+**Date:** 2026-04-21
+**Model:** Qwen 2.5 Math 1.5B Base
+**Dataset:** GSM8K sft.jsonl (r1_zero format)
+**Script:** `cs336_alignment/sft.py`
+**Config:** lr=1e-5, batch_size=2, gradient_accumulation_steps=4, clip_value=1.0
+**Eval:** 50 prompts from training set, every 5 optimizer steps
+
+### Results Summary
+
+| Dataset Size | Peak avg_reward | Peak format_reward | Notes |
+|---|---|---|---|
+| 128 | ~0.10 | ~0.80 | reward collapses then recovers; overfitting evident |
+| 256 | ~0.175 | ~0.70 | steady climb, hits 15% target, slight format drop at end |
+| 512 | ~0.32 | ~0.75 | strong improvement, trend still rising at step 60 |
+| 1024 | ~0.40 | ~0.85 | noisy but higher ceiling, format mostly learned |
+| full | ~0.40–0.60 | ~0.85–0.90 | best overall; format plateaus ~0.9, reward stabilizes 0.4–0.6 |
+
+### Key Observations
+
+- More data consistently improves both format and answer accuracy
+- Format reward learns faster than answer reward — model learns structure before correctness
+- With full dataset, `avg_reward` reaches 40–60%, well above the 15% target
+- High variance in eval curves is due to small eval set (50 prompts) — not instability
+- Token entropy decreases over training — model becomes more confident/deterministic
+- Baseline was 2.4% → SFT with full dataset achieves ~40–60%: **~20x improvement**

@@ -149,7 +149,7 @@ def main():
     eval_interval = 5
     output_dir = PROJECT_ROOT/"outputs/sft"
     wandb_project ="cs336-sft"
-    run_name = f"sft-{dataset_size}"
+    run_name = f"sft-filtered"
 
     # 2. init wandb; define_metric("train_step"), define_metric("eval_step"),
     #    define_metric("train/*", step_metric="train_step"),
@@ -168,6 +168,7 @@ def main():
             dataset.append(json.loads(line))
     if dataset_size != "full":
         dataset = dataset[:dataset_size]
+    dataset = [r for r in dataset if r1_zero_reward_fn(r["response"], re.search(r"<answer>(.*?)</answer>", r["response"]).group(1))["reward"] == 1.0]
     prompts = [r["prompt"] for r in dataset]
     responses = [r["response"] for r in dataset]
     ground_truths = [re.search(r"<answer>(.*?)</answer>", r["response"]).group(1) for r in dataset]
