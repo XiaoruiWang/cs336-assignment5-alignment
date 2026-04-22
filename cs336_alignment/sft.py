@@ -168,7 +168,13 @@ def main():
             dataset.append(json.loads(line))
     if dataset_size != "full":
         dataset = dataset[:dataset_size]
-    dataset = [r for r in dataset if r1_zero_reward_fn(r["response"], re.search(r"<answer>(.*?)</answer>", r["response"]).group(1))["reward"] == 1.0]
+    gsm_data = [json.loads(l) for l in open(PROJECT_ROOT/"data/gsm8k/train.jsonl")]
+    gsm_lookup = {r["question"]: r["answer"].split("####")[-1].strip() for r in gsm_data}
+    def get_ground_truth(prompt):
+        m = re.search(r"User: (.*?)\nAssistant:", prompt, re.DOTALL)
+        return gsm_lookup.get(m.group(1).strip()) if m else None
+    dataset = [r for r in dataset if (gt := get_ground_truth(r["prompt"])) and r1_zero_reward_fn(r["response"], gt)["reward"] == 1.0]
+    print(f"Filtered dataset size: {len(dataset)}")
     prompts = [r["prompt"] for r in dataset]
     responses = [r["response"] for r in dataset]
     ground_truths = [re.search(r"<answer>(.*?)</answer>", r["response"]).group(1) for r in dataset]
