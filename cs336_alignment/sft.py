@@ -140,8 +140,8 @@ def main():
     #            eval_interval, output_dir, wandb project/run name
     model_id = "Qwen/Qwen2.5-Math-1.5B"
     sft_data_path = PROJECT_ROOT/"data/gsm8k/sft.jsonl"
-    dataset_size = 1024  #128, 256, 512, 1024, "full"
-    #dataset_size = "full"
+    #dataset_size = 1024  #128, 256, 512, 1024, "full"
+    dataset_size = "full"
     lr = 1e-5  
     batch_size = 2 
     gradient_accumulation_steps = 4
