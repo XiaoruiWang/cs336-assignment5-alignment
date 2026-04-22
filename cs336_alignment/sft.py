@@ -140,8 +140,9 @@ def main():
     #            eval_interval, output_dir, wandb project/run name
     model_id = "Qwen/Qwen2.5-Math-1.5B"
     sft_data_path = PROJECT_ROOT/"data/gsm8k/sft.jsonl"
-    dataset_size = 128 
-    lr = 1e-5 
+    dataset_size = 256  #128, 256, 512, 1024, "full"
+    #dataset_size = "full"
+    lr = 1e-5  
     batch_size = 2 
     gradient_accumulation_steps = 4
     clip_value = 1.0 
@@ -214,7 +215,7 @@ def main():
             wandb.log({"train/loss": loss.item(), "train_step": train_step})
             if train_step  % eval_interval == 0:
                 load_policy_into_vllm_instance(model,vllm_model)
-                stats = log_generations(vllm_model,prompts[:10],ground_truths[:10],
+                stats = log_generations(vllm_model,prompts[:50],ground_truths[:50],
                                         r1_zero_reward_fn, sampling_params,model,tokenizer)
                 wandb.log({
                             "eval/avg_reward": stats["avg_reward"],
