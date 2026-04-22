@@ -84,3 +84,23 @@ will improve correctness. This 2.4% is our floor to beat.
 - High variance in eval curves is due to small eval set (50 prompts) — not instability
 - Token entropy decreases over training — model becomes more confident/deterministic
 - Baseline was 2.4% → SFT with full dataset achieves ~40–60%: **~20x improvement**
+
+---
+
+## Section 4.3 — SFT Filtered Dataset Experiment
+
+**Date:** 2026-04-21
+**Config:** same as full dataset run above
+**Filter:** keep only examples where `r1_zero_reward_fn(response, ground_truth)["reward"] == 1.0`
+
+### Result
+
+**Filtered dataset size: 7473 / 7473 (100% pass rate)**
+
+All examples in sft.jsonl already produce correct answers — the dataset was curated to only include correct reasoning traces. The filter has no effect.
+
+**Curves:** identical to the full dataset run (~40–60% reward, ~0.85–0.90 format reward).
+
+### Finding
+
+The GSM8K SFT dataset is pre-filtered for correctness. There is no meaningful difference between "filtered" and "full" for this dataset. This contrasts with what the experiment was designed to test — in a dataset with mixed correct/incorrect examples, filtering would be expected to improve performance by training only on high-quality demonstrations.
