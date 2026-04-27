@@ -214,7 +214,7 @@ def run_compute_group_normalized_rewards(
                 group_std = torch.std(one_group).item()
                 advantage[start:idx+1] = (one_group- group_mean)/(group_std + advantage_eps)
             else: 
-                advantage[start:idx+1] = (one_group- group_mean)/( advantage_eps)
+                advantage[start:idx+1] = (one_group- group_mean)
             
             one_group = []
     meta_data = {}
