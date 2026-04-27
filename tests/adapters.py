@@ -200,7 +200,27 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    raw_rewards_dict = [reward_fn(r,g) for r, g in zip(rollout_responses,repeated_ground_truths)]
+    raw_reward = torch.tensor([r["reward"] for r in raw_rewards_dict])
+    one_group = []
+    advantage = torch.empty_like(raw_reward)
+    for idx, r in enumerate(raw_reward):
+        one_group.append(r)
+        if (idx+1)% group_size == 0: 
+            one_group = torch.tensor(one_group)
+            group_mean= torch.mean(one_group).item()
+            start = idx+1-group_size
+            if normalize_by_std:
+                group_std = torch.std(one_group).item()
+                advantage[start:idx+1] = (one_group- group_mean)/(group_std + advantage_eps)
+            else: 
+                advantage[start:idx+1] = (one_group- group_mean)/( advantage_eps)
+            
+            one_group = []
+    meta_data = {}
+
+    return advantage, raw_reward, meta_data
+
 
 def run_compute_naive_policy_gradient_loss(
     raw_rewards_or_advantages: torch.Tensor,
@@ -322,7 +342,7 @@ def run_grpo_microbatch_train_step(
 
 
 
-
+## **************end of section 7 ****************##
 
 """
 The below adapters are used in the optional 
