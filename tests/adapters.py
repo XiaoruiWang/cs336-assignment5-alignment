@@ -229,7 +229,7 @@ def run_compute_naive_policy_gradient_loss(
     """Compute policy gradient loss using either raw rewards or advantages.
 
     Args:
-        raw_rewards_or_advantages: torch.Tensor of shape (batch_size, 1): 
+        raw_rewards_or_advantages: torch.Tensor of shape (batch_size, 1):  
             the raw rewards or advantages for each rollout response.
         policy_log_probs: torch.Tensor of shape (batch_size, sequence_length): 
             the log-probs of the policy.
@@ -238,7 +238,7 @@ def run_compute_naive_policy_gradient_loss(
         torch.Tensor of shape (batch_size, sequence_length): 
             the policy gradient per-token loss.
     """
-    raise NotImplementedError
+    return -policy_log_probs * raw_rewards_or_advantages
 
 
 def run_compute_grpo_clip_loss(
