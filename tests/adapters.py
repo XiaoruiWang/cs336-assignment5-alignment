@@ -284,7 +284,16 @@ def run_compute_policy_gradient_loss(
     """
     Wrapper that delegates to the appropriate policy gradient loss function above.
     """
-    raise NotImplementedError
+    if loss_type == "reinforce_with_baseline":
+        loss = run_compute_naive_policy_gradient_loss(advantages, policy_log_probs)
+        meta_data = {}
+    elif loss_type == "grpo_clip":
+        loss, meta_data = run_compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
+    else:
+        loss = run_compute_naive_policy_gradient_loss(raw_rewards, policy_log_probs)
+        meta_data = {}
+    return loss, meta_data
+
 
 
 def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = None) -> torch.Tensor:
