@@ -438,6 +438,23 @@ logits = model(input_ids).logits
 
 **Mental model:** tokenize → move → forward. Always ask "where did this tensor come from?" before calling `model(x)`. Tokenizer output is always CPU; models are on GPU. They must match.
 
+---
+
+### GRPO importance ratio — use exp(log difference), not division
+
+**Bug:** computing the policy ratio as `policy_log_probs / old_log_probs` — this divides two log-probability values, which is meaningless.
+
+**Fix:**
+```python
+ratio = torch.exp(policy_log_probs - old_log_probs)
+```
+
+**Why:** the importance sampling ratio is π(a) / π_old(a). Working in log space:
+
+$$\frac{\pi(a)}{\pi_{\text{old}}(a)} = \exp\!\bigl(\log\pi(a) - \log\pi_{\text{old}}(a)\bigr)$$
+
+Dividing log-probs gives log(π) / log(π_old), which has no probabilistic meaning. Always compute ratios via subtraction in log space, then exponentiate.
+
 **Secondary pattern — when you don't have `model.device`:** use `tensor.device` to match devices without passing the model around.
 
 ---
