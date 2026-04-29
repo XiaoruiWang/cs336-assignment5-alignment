@@ -421,6 +421,21 @@ for i in range(iterations):
 
 **Why `zero_grad` before `step` is wrong:** it wipes accumulated gradients before the optimizer can use them — the weight update uses zero gradients and does nothing.
 
+### Why divide loss by `gradient_accumulation_steps`
+
+PyTorch `.backward()` **adds** to existing `.grad` tensors — it does not replace them. So across 4 microbatches:
+
+```
+microbatch 1: loss/4 → backward()  → grad = g1/4
+microbatch 2: loss/4 → backward()  → grad = g1/4 + g2/4
+microbatch 3: loss/4 → backward()  → grad = g1/4 + g2/4 + g3/4
+microbatch 4: loss/4 → backward()  → grad = g1/4 + g2/4 + g3/4 + g4/4
+optimizer.step()                   → uses the accumulated sum (= average of 4 losses)
+optimizer.zero_grad()              → resets grads to 0
+```
+
+Dividing by `gradient_accumulation_steps` inside the microbatch train step ensures the final accumulated gradient equals the average — the same as if you processed all 4 examples in one big batch. Without the division, the optimizer would see 4× the correct gradient magnitude.
+
 ---
 
 ### Device mismatch — always move tokenizer output to model device
