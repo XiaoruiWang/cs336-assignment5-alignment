@@ -314,7 +314,7 @@ def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = 
     """
     mask = mask.to(tensor.device)
     masked_sum = (tensor*mask).sum(dim=dim)
-    count = mask.sum(dim = dim).clamp(min = 1)
+    count = mask.sum(dim = dim)
     return masked_sum/count
 
 
