@@ -312,7 +312,10 @@ def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = 
         torch.Tensor, the mean of the tensor along the specified
             dimension, considering only the elements with mask value 1.
     """
-    raise NotImplementedError
+    mask = mask.to(tensor.device)
+    masked_sum = (tensor*mask).sum(dim=dim)
+    count = mask.sum(dim = dim).clamp(min = 1)
+    return masked_sum/count
 
 
     
