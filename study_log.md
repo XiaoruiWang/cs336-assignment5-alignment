@@ -496,3 +496,98 @@ mask = mask.to(tensor.device)   # match mask to wherever tensor already lives
 ```
 
 This is useful inside helper functions that receive tensors but not the model itself.
+
+---
+
+### GRPO Hyperparameters — Mental Model
+
+#### Anchor: one batch = one optimizer step = one weight update
+
+Everything else is derived from this.
+
+#### Decision flow (outer to inner)
+
+```
+group_size (G) = 8              ← algorithm choice: how many responses per prompt?
+rollout_batch_size = 256        ← compute choice: how many total responses per GRPO step?
+n_prompts_per_rollout_batch = rollout_batch_size // group_size = 32   ← derived
+train_batch_size = 256          ← = rollout_batch_size (train on all of them in one optimizer step)
+gradient_accumulation_steps = 128   ← hardware choice: how small must microbatches be to fit GPU memory?
+micro_train_batch_size = train_batch_size // gradient_accumulation_steps = 2   ← derived
+n_microbatches_per_rollout_batch = rollout_batch_size // micro_train_batch_size = 128   ← derived
+```
+
+#### What each name means
+
+| Name | Value | Meaning |
+|---|---|---|
+| `rollout_batch_size` | 256 | Total responses generated per GRPO step |
+| `group_size` (G) | 8 | Responses sampled per prompt by vLLM |
+| `n_prompts_per_rollout_batch` | 32 | Distinct prompts sampled each step |
+| `train_batch_size` | 256 | Responses used per optimizer step (one weight update) |
+| `gradient_accumulation_steps` | 128 | Microbatches to split train_batch_size into |
+| `micro_train_batch_size` | 2 | Responses per microbatch forward+backward pass |
+| `n_microbatches_per_rollout_batch` | 128 | Total backward() calls per optimizer.step() |
+
+#### Two free choices; everything else is derived
+
+- `group_size` — algorithm choice (more = better advantage estimates, slower generation)
+- `gradient_accumulation_steps` — hardware choice (more = smaller microbatches = less GPU memory)
+
+#### Why micro_train_batch_size = 2 (not larger)?
+
+With 1.5B parameters and 1024-token sequences, activations stored for backprop fill GPU memory fast.
+Batch size 2 is the safe default for this model/sequence-length combo on the handout's hardware.
+If you have more GPU memory, reduce `gradient_accumulation_steps` (larger microbatches = fewer passes = faster).
+
+#### `gradient_accumulation_steps` vs `n_microbatches_per_rollout_batch`
+
+Both equal 128 here because `train_batch_size = rollout_batch_size`. They mean different things:
+- `gradient_accumulation_steps` — how many backward() calls before one optimizer.step(); used to scale loss
+- `n_microbatches_per_rollout_batch` — how many microbatches cover the full rollout batch
+
+If `train_batch_size < rollout_batch_size` (multiple optimizer steps per rollout), they would diverge.
+
+#### Why divide loss by `gradient_accumulation_steps` inside the microbatch step?
+
+PyTorch `.backward()` **adds** to `.grad`, not replaces. After 128 microbatches:
+`grad = g1/128 + g2/128 + ... + g128/128` = average gradient over the full batch.
+Without the division, the optimizer would see 128× the correct gradient magnitude.
+
+---
+
+### GRPO microbatch tokenization — don't re-tokenize inside the loop
+
+**Bug:** tokenizing the full rollout batch once (256 responses) to get `old_log_probs`, then re-tokenizing microbatches of 2 inside the microbatch loop to get `policy_log_probs`.
+
+**Why it breaks:** padding is computed relative to the longest sequence in each batch. The full batch pads to `max_len(256 sequences)`; a microbatch pads to `max_len(2 sequences)`. So `old_log_probs` has shape `(2, L_full)` and `policy_log_probs` has shape `(2, L_micro)` where `L_micro ≤ L_full`. The ratio `exp(policy_log_probs - old_log_probs)` crashes on shape mismatch.
+
+**Fix:** tokenize once before the microbatch loop, then slice the tensors:
+```python
+# Before the loop — tokenize full batch once
+tokens = run_tokenize_prompt_and_output(repeated_prompts, rollout_responses, tokenizer)
+
+# Inside the microbatch loop — slice, don't re-tokenize
+mb_input_ids    = tokens["input_ids"][start:end]
+mb_labels       = tokens["labels"][start:end]
+mb_response_mask = tokens["response_mask"][start:end]
+sliced_old_log_probs = old_log_probs[start:end, :]
+
+new_log_probs = run_get_response_log_probs(model, mb_input_ids, mb_labels, False)
+policy_log_probs = new_log_probs["log_probs"]
+# Now both shapes are (micro_train_batch_size, L_full) — consistent
+```
+
+**Mental model:** tokenize once to establish a consistent padding length, then slice rows. Never re-tokenize a subset — the padding will shrink and break alignment with any tensors computed on the full batch.
+
+---
+
+### `epochs_per_rollout_batch` — on-policy vs off-policy
+
+Controls how many times you train on the same rollout batch before collecting new rollouts.
+
+**= 1 (on-policy):** generate → train once → generate new → repeat. The policy being trained is essentially the same one that generated the data.
+
+**> 1 (off-policy):** generate → train N times → generate new. By the 2nd+ pass the policy has drifted from when the data was collected → use `grpo_clip` to correct for this via the importance ratio `π(a)/π_old(a)`. With `epochs = 1`, the ratio is always ~1.0 so clipping does nothing.
+
+**Practical reason for > 1:** generation (vLLM) is slow; training is fast. Re-using rollouts 2-3× extracts more gradient signal per expensive generation call.
