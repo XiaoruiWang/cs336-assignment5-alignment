@@ -48,7 +48,7 @@ export WANDB_API_KEY=wandb_v1_0AtVOdjTPNJoyrrHNC4pNOxTYFl_v0DXvjOPPptkXTkk2iDHat
 ```bash
 uv run python cs336_alignment/math_baseline.py
 uv run python -m cs336_alignment.sft
-
+uv run python -m cs336_alignment.grpo
 ```
 
 Results are saved to `outputs/math_baseline_results.jsonl`.

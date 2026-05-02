@@ -238,6 +238,8 @@ def run_compute_naive_policy_gradient_loss(
         torch.Tensor of shape (batch_size, sequence_length): 
             the policy gradient per-token loss.
     """
+    print(raw_rewards_or_advantages.device)
+    print(policy_log_probs.device)
     return -policy_log_probs * raw_rewards_or_advantages
 
 
