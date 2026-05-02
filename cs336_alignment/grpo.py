@@ -166,9 +166,15 @@ def main():
 
     #    g. Get old_log_probs with run_get_response_log_probs (torch.no_grad())
     #       → snapshot before any gradient steps
+        old_log_probs_list = []
         with torch.no_grad():
-            log_probs =  run_get_response_log_probs(model,tokens["input_ids"],tokens["labels"], False)
-        old_log_probs = log_probs["log_probs"]
+            for step in range(n_microbatches_per_rollout_batch):
+                start = step * micro_train_batch_size
+                end = (step + 1) * micro_train_batch_size
+                result = run_get_response_log_probs(model, tokens["input_ids"][start:end], tokens["labels"][start:end], False)
+                old_log_probs_list.append(result["log_probs"])
+        old_log_probs = torch.cat(old_log_probs_list, dim=0)
+
 
     #    h. For epochs_per_rollout_batch:
     #       optimizer.zero_grad()  ← must be BEFORE the microbatch loop

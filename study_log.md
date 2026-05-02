@@ -556,6 +556,33 @@ Without the division, the optimizer would see 128× the correct gradient magnitu
 
 ---
 
+### OOM: never forward the full rollout batch at once — use microbatches + no_grad
+
+**Error:** `torch.OutOfMemoryError: Tried to allocate 89.19 GiB` when computing `old_log_probs` by passing all 256 sequences to the model in one call.
+
+**Root cause (how to read the traceback):** always read bottom-up. The bottom line is the actual error; trace upward to find which line in your code triggered it. Here: `model(input_ids).logits` → called from `run_get_response_log_probs` → called from `grpo.py` with `tokens["input_ids"]` = all 256 sequences × 1024 tokens = too large.
+
+**Why `no_grad()` saves memory:** a normal forward pass stores all intermediate activations for backprop. For 256 × 1024 tokens through a 1.5B model, that's ~89GB. `torch.no_grad()` tells PyTorch to skip storing those activations — only the final output tensor is kept. Memory drops to almost nothing per microbatch.
+
+**Fix:** compute `old_log_probs` in microbatches under `no_grad()`, then `cat` the results:
+
+```python
+old_log_probs_list = []
+with torch.no_grad():
+    for step in range(n_microbatches_per_rollout_batch):
+        start = step * micro_train_batch_size
+        end = (step + 1) * micro_train_batch_size
+        result = run_get_response_log_probs(model, tokens["input_ids"][start:end], tokens["labels"][start:end], False)
+        old_log_probs_list.append(result["log_probs"])
+old_log_probs = torch.cat(old_log_probs_list, dim=0)  # (rollout_batch_size, seq_len)
+```
+
+The final `torch.cat` is cheap — it just stitches together small `(2, seq_len)` tensors, no activations involved.
+
+**Rule:** any forward pass not followed by `.backward()` must be wrapped in `torch.no_grad()`. For large batches, also process in microbatches to avoid peak activation memory.
+
+---
+
 ### GRPO microbatch tokenization — don't re-tokenize inside the loop
 
 **Bug:** tokenizing the full rollout batch once (256 responses) to get `old_log_probs`, then re-tokenizing microbatches of 2 inside the microbatch loop to get `policy_log_probs`.
