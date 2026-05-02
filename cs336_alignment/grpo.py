@@ -28,6 +28,7 @@ def main():
     # 1. Config (starter hyperparameters from handout)
     model_id = "Qwen/Qwen2.5-Math-1.5B"
     n_grpo_steps = 200
+    n_grpo_steps = 5 # only for smoke test
     learning_rate = 1e-5
     rollout_batch_size = 256 # total responses per batch 
     group_size = 8 # (G completions per prompt)
